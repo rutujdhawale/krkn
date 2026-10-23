@@ -74,6 +74,7 @@ from krkn.rollback.command import (
     execute_rollback as execute_rollback_command,
 )
 from krkn.scenario_config_parser import parse_scenario_config, extract_scenario_types
+from krkn.dry_run import _dry_run_scenarios
 from krkn.summarized_reports.transform import build_chaos_report, build_chaos_report_pdf
 from krkn.summarized_reports.transform_html import build_chaos_report_html
 from krkn.scenario_plugins.triggers.trigger_manager import TriggerManager
@@ -122,7 +123,14 @@ def main(options, command: Optional[str], out: Optional[dict] = None) -> int:
     print(pyfiglet.figlet_format("krkn"))
     logging.info("Starting krkn")
 
-    
+    dry_run = getattr(options, 'dry_run', False)
+    if dry_run and command is not None:
+        logging.error(
+            "--dry-run cannot be used with the '%s' command. "
+            "Dry run is only supported for scenario preview (no command).",
+            command,
+        )
+        return -1
 
     cfg = options.cfg
     # Parse and read the config
@@ -334,6 +342,12 @@ def main(options, command: Optional[str], out: Optional[dict] = None) -> int:
         if ocpcli.is_openshift():
             distribution = "openshift"
         logging.info("Detected cluster platform: %s" % (distribution))
+
+        if dry_run:
+            scenario_plugin_factory = ScenarioPluginFactory()
+            return _dry_run_scenarios(
+                chaos_scenarios, scenario_plugin_factory, kubecli
+            )
 
         # Set up kraken url to track signal
         if not 0 <= int(port) <= 65535:
@@ -1090,6 +1104,14 @@ if __name__ == "__main__":
         "--debug",
         dest="debug",
         help="enable debug logging",
+        default=False,
+    )
+
+    parser.add_option(
+        "--dry-run",
+        dest="dry_run",
+        action="store_true",
+        help="display planned chaos targets without executing any destructive actions",
         default=False,
     )
 
